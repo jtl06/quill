@@ -543,7 +543,7 @@ private:
 
           // The same split as fmt's write_padded(): strings align left by default
           size_t const left_padding = (part.specs.align() == fmtquill::align::right) ? padding
-            : (part.specs.align() == fmtquill::align::center)                       ? padding / 2
+            : (part.specs.align() == fmtquill::align::center)                        ? padding / 2
                                                                                      : 0;
           char const fill = part.specs.fill_unit<char>();
 
@@ -557,8 +557,7 @@ private:
       write_pos = detail::copy_to(write_pos, value.data(), value.size());
     }
 
-    (void)detail::copy_to(write_pos, literals + _trailing_literal_pos,
-                          _literal_buffer.size() - _trailing_literal_pos);
+    (void)detail::copy_to(write_pos, literals + _trailing_literal_pos, _literal_buffer.size() - _trailing_literal_pos);
 
     return true;
   }
@@ -605,8 +604,8 @@ private:
     if (_is_set_in_pattern[Attribute::LineNumber])
     {
       char const* const line = log_statement_metadata.line();
-      _set_arg_val<Attribute::LineNumber>(
-        std::string_view{line, static_cast<size_t>(_source_location_end(log_statement_metadata) - line)});
+      _set_arg_val<Attribute::LineNumber>(std::string_view{
+        line, static_cast<size_t>(_source_location_end(log_statement_metadata) - line)});
     }
 
     if (_is_set_in_pattern[Attribute::Logger])
