@@ -90,4 +90,34 @@ TEST_CASE("append_to_buffer_flushes_a_buffer_with_a_fixed_capacity")
   REQUIRE_EQ(std::string(output.begin(), output.end()), expected);
 }
 
+/***/
+TEST_CASE("fill_to_writes_every_count")
+{
+  for (size_t count = 0; count <= 40; ++count)
+  {
+    std::string buffer(count + 8u, 'x');
+    char* const end = fill_to(buffer.data(), '*', count);
+
+    REQUIRE_EQ(end, buffer.data() + count);
+    REQUIRE_EQ(buffer.substr(0, count), std::string(count, '*'));
+  }
+}
+
+/***/
+TEST_CASE("is_ascii_finds_a_non_ascii_byte_at_every_position")
+{
+  for (size_t size = 0; size <= 40; ++size)
+  {
+    std::string text = make_text(size);
+    REQUIRE(is_ascii(text));
+
+    for (size_t pos = 0; pos < size; ++pos)
+    {
+      std::string non_ascii = text;
+      non_ascii[pos] = static_cast<char>(0x80u);
+      REQUIRE_FALSE(is_ascii(non_ascii));
+    }
+  }
+}
+
 TEST_SUITE_END();

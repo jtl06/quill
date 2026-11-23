@@ -232,6 +232,18 @@ TEST_CASE("message_format_size")
   REQUIRE_EQ(MacroMetadata{}.message_format_size(), 0u);
 }
 
+TEST_CASE("source_location_size")
+{
+  constexpr MacroMetadata macro_metadata{
+    "dir/file.cpp:123", "", "Test fmt {}", nullptr, quill::LogLevel::Info, MacroMetadata::Event::Log};
+  REQUIRE_EQ(macro_metadata.source_location_size(), 16u);
+  REQUIRE_EQ(std::string_view{macro_metadata.short_source_location()}.size(),
+             macro_metadata.source_location_size() -
+               static_cast<size_t>(macro_metadata.short_source_location() - macro_metadata.source_location()));
+
+  REQUIRE_EQ(MacroMetadata{}.source_location_size(), 0u);
+}
+
 TEST_CASE("source_location_accepts_both_separators")
 {
   // MinGW and builds hosted on Windows can spell __FILE__ with either separator
