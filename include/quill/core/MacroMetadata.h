@@ -72,6 +72,12 @@ public:
    */
   QUILL_NODISCARD size_t message_format_size() const noexcept { return _message_format_size; }
 
+  /**
+   * The length of source_location(), calculated with the metadata like message_format_size(), so
+   * that the backend does not measure the location of every record it formats.
+   */
+  QUILL_NODISCARD size_t source_location_size() const noexcept { return _source_location_size; }
+
   QUILL_NODISCARD char const* line() const noexcept
   {
     if (QUILL_UNLIKELY(_source_location[_colon_separator_pos] == '\0'))
@@ -165,6 +171,7 @@ private:
       _message_format(message_format.data()),
       _tags(tags),
       _message_format_size(static_cast<uint32_t>(message_format.size())),
+      _source_location_size(static_cast<uint16_t>(source_location.size())),
       _colon_separator_pos(_calc_colon_separator_pos(source_location)),
       _file_name_pos(_calc_file_name_pos(source_location)),
       _log_level(log_level),
@@ -212,6 +219,7 @@ private:
   char const* _message_format{nullptr};
   char const* _tags{nullptr};
   uint32_t _message_format_size{0};
+  uint16_t _source_location_size{0};
   uint16_t _colon_separator_pos{0};
   uint16_t _file_name_pos{0};
   LogLevel _log_level{LogLevel::None};

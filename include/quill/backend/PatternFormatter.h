@@ -416,6 +416,12 @@ private:
     return specs;
   }
 
+  /** @return the end of the source location, which the metadata measured when it was created */
+  QUILL_NODISCARD static char const* _source_location_end(MacroMetadata const& metadata) noexcept
+  {
+    return metadata.source_location() + metadata.source_location_size();
+  }
+
   /***/
   template <size_t I, typename T>
   void _set_arg_val(T const& arg)
@@ -487,7 +493,9 @@ private:
 
     if (_is_set_in_pattern[Attribute::LineNumber])
     {
-      _set_arg_val<Attribute::LineNumber>(log_statement_metadata.line());
+      char const* const line = log_statement_metadata.line();
+      _set_arg_val<Attribute::LineNumber>(
+        std::string_view{line, static_cast<size_t>(_source_location_end(log_statement_metadata) - line)});
     }
 
     if (_is_set_in_pattern[Attribute::Logger])
@@ -524,7 +532,10 @@ private:
 
     if (_is_set_in_pattern[Attribute::ShortSourceLocation])
     {
-      _set_arg_val<Attribute::ShortSourceLocation>(log_statement_metadata.short_source_location());
+      char const* const short_source_location = log_statement_metadata.short_source_location();
+      _set_arg_val<Attribute::ShortSourceLocation>(std::string_view{
+        short_source_location,
+        static_cast<size_t>(_source_location_end(log_statement_metadata) - short_source_location)});
     }
 
     if (_is_set_in_pattern[Attribute::NamedArgs])
