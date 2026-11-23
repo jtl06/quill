@@ -270,6 +270,9 @@ private:
     Attribute attribute{Attribute::ATTR_NR_ITEMS};
     fmtquill::format_specs specs;
     bool has_format_specs{false};
+
+    /** The specs only pad the value to a width, which _format() can do itself for ASCII text */
+    bool is_padding_only{false};
   };
 
   /** Attribute names, at the same index as the Attribute enum **/
@@ -367,6 +370,9 @@ private:
       {
         part.specs = _parse_format_specs(attr.substr(colon_pos + 1u));
         part.has_format_specs = true;
+        part.is_padding_only = _is_padding_only(part.specs);
+        _has_format_specs_other_than_padding |= !part.is_padding_only;
+        _has_padding |= part.is_padding_only;
       }
 
       _format_parts.push_back(part);
@@ -416,6 +422,31 @@ private:
     return specs;
   }
 
+  /** @return the fill needed to pad `value`, measured as ASCII, to the width of `part` */
+  QUILL_NODISCARD static size_t _padding(FormatPart const& part, std::string_view value) noexcept
+  {
+    auto const width = static_cast<size_t>(part.specs.width);
+    return (width > value.size()) ? (width - value.size()) : 0;
+  }
+
+  /**
+   * @return true if `specs` only set a width, with an optional single-byte fill and an alignment.
+   * fmt pads a string by its display width, which it measures by decoding every code point. The
+   * display width of ASCII text is its length, so _format() pads ASCII values itself.
+   */
+  QUILL_NODISCARD static bool _is_padding_only(fmtquill::format_specs const& specs) noexcept
+  {
+    fmtquill::align const align = specs.align();
+
+    return (specs.width > 0) && (specs.precision < 0) &&
+      (specs.dynamic_width() == fmtquill::arg_id_kind::none) &&
+      (specs.dynamic_precision() == fmtquill::arg_id_kind::none) &&
+      ((specs.type() == fmtquill::presentation_type::none) ||
+       (specs.type() == fmtquill::presentation_type::string)) &&
+      (specs.sign() == fmtquill::sign::none) && !specs.alt() && !specs.localized() &&
+      (specs.fill_size() == 1) && (align != fmtquill::align::numeric);
+  }
+
   /** @return the end of the source location, which the metadata measured when it was created */
   QUILL_NODISCARD static char const* _source_location_end(MacroMetadata const& metadata) noexcept
   {
@@ -454,6 +485,86 @@ private:
 
     return std::string_view{_formatted_named_args_buffer.data(), _formatted_named_args_buffer.size()};
   }
+
+  /**
+   * Appends the statement when every piece is a plain string or a padded string. The statement is
+   * reserved once and the pieces are copied through a local pointer instead of checking and
+   * updating the buffer's size for each one.
+   * @return false, with nothing appended, if a padded value is not ASCII
+   */
+  template <bool HasPadding>
+  QUILL_ATTRIBUTE_HOT QUILL_ALWAYS_INLINE bool _format_pieces()
+  {
+    size_t total_size = _literal_buffer.size();
+
+    for (FormatPart const& part : _format_parts)
+    {
+      std::string_view const value = _attribute_values[part.attribute];
+      total_size += value.size();
+
+      if constexpr (HasPadding)
+      {
+        if (part.is_padding_only)
+        {
+          if (QUILL_UNLIKELY(!detail::is_ascii(value)))
+          {
+            return false;
+          }
+
+          total_size += _padding(part, value);
+        }
+      }
+    }
+
+    size_t const offset = _formatted_log_message_buffer.size();
+
+    if constexpr (HasPadding)
+    {
+      // The fill is written in blocks of 8 bytes, which may run past the statement
+      _formatted_log_message_buffer.try_resize(offset + total_size + sizeof(uint64_t));
+    }
+
+    _formatted_log_message_buffer.try_resize(offset + total_size);
+
+    char* write_pos = _formatted_log_message_buffer.data() + offset;
+    char const* const literals = _literal_buffer.data();
+
+    for (FormatPart const& part : _format_parts)
+    {
+      write_pos = detail::copy_to(write_pos, literals + part.literal_pos, part.literal_size);
+
+      std::string_view const value = _attribute_values[part.attribute];
+
+      if constexpr (HasPadding)
+      {
+        if (part.is_padding_only)
+        {
+          size_t const padding = _padding(part, value);
+
+          // The same split as fmt's write_padded(): strings align left by default
+          size_t const left_padding = (part.specs.align() == fmtquill::align::right) ? padding
+            : (part.specs.align() == fmtquill::align::center)                       ? padding / 2
+                                                                                     : 0;
+          char const fill = part.specs.fill_unit<char>();
+
+          write_pos = detail::fill_to(write_pos, fill, left_padding);
+          write_pos = detail::copy_to(write_pos, value.data(), value.size());
+          write_pos = detail::fill_to(write_pos, fill, padding - left_padding);
+          continue;
+        }
+      }
+
+      write_pos = detail::copy_to(write_pos, value.data(), value.size());
+    }
+
+    (void)detail::copy_to(write_pos, literals + _trailing_literal_pos,
+                          _literal_buffer.size() - _trailing_literal_pos);
+
+    return true;
+  }
+
+  /** _format_pieces() for patterns with padding, out of line so that _format() stays small */
+  QUILL_NOINLINE bool _format_padded_pieces() { return _format_pieces<true>(); }
 
   /***/
   QUILL_ATTRIBUTE_HOT std::string_view _format(LogRecord const& record, std::string_view log_msg)
@@ -570,6 +681,18 @@ private:
 
     _set_arg_val<Attribute::Message>(log_msg);
 
+    if (!_has_format_specs_other_than_padding)
+    {
+      // Every piece is a plain string or an ASCII string padded to a width. Patterns without
+      // padding get a copy loop without the padding checks
+      bool const formatted = _has_padding ? _format_padded_pieces() : _format_pieces<false>();
+
+      if (QUILL_LIKELY(formatted))
+      {
+        return std::string_view{_formatted_log_message_buffer.data(), _formatted_log_message_buffer.size()};
+      }
+    }
+
     fmtquill::appender out{_formatted_log_message_buffer};
 
     for (FormatPart const& part : _format_parts)
@@ -602,6 +725,8 @@ private:
   std::string _literal_buffer;
   std::vector<FormatPart> _format_parts;
   size_t _trailing_literal_pos{0};
+  bool _has_format_specs_other_than_padding{false};
+  bool _has_padding{false};
 
   std::array<std::string_view, Attribute::ATTR_NR_ITEMS> _attribute_values{};
   std::bitset<Attribute::ATTR_NR_ITEMS> _is_set_in_pattern;

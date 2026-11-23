@@ -76,6 +76,19 @@
 #endif
 
 /**
+ * Asks the compiler to inline a function even where its heuristics would not
+ */
+#ifndef QUILL_ALWAYS_INLINE
+  #if QUILL_HAS_ATTRIBUTE(always_inline)
+    #define QUILL_ALWAYS_INLINE inline __attribute__((always_inline))
+  #elif defined(_MSC_VER)
+    #define QUILL_ALWAYS_INLINE __forceinline
+  #else
+    #define QUILL_ALWAYS_INLINE inline
+  #endif
+#endif
+
+/**
  * Gcc hot/cold attributes
  * Tells GCC that a function is hot or cold. GCC can use this information to
  * improve static analysis, i.e. a conditional branch to a cold function
